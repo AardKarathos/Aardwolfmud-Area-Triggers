@@ -12,7 +12,7 @@ Opens a dialog where a json serialized configuration can be entered to replace t
 
 **Syntax**: atrig export 
 
-Outputs the json serailized configuration.
+Outputs the json serialized configuration.
 
 **Syntax**: atrig reload 
 
