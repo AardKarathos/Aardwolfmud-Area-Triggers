@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+
+<muclient>
+    <plugin name="area_triggers" author="Karathos" id="015753ac2e3f87dd1af38545" language="Lua" purpose="Area Triggers" save_state="y" date_written="2021-01-09" requires="4.80" version="1.0">
+        <description trim="y">
+            <![CDATA[
+            Allows one to define triggers that fire on entering/exiting an area/room
+            ]]>
+        </description>
+
+    </plugin>
+
+    <aliases>
+        <alias  match="^[ ]*atrig[ ]+reload$"
+                script="reloadPlugin"
+                enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" ></alias>
+        <alias  match="^[ ]*atrig[ ]+help$"
+                script="printHelp"
+                enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" ></alias>
+        <alias  match="^[ ]*atrig[ ]+import$"
+                script="importConfig"
+                enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" ></alias>
+        <alias  match="^[ ]*atrig[ ]+export$"
+                script="exportConfig"
+                enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" ></alias>
+        <alias  match="^[ ]*atrig[ ]+(?<command>enter|exit|view|clear)([ ]+(?<area>\S+)([ ]+((?<roomid>\d+)([ ]+(?<rtType>session|area))?|(?<atType>session)))?([ ]+(?<value>.+))?)?$"
+                script="updateConfig"
+                enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" ></alias>
+    </aliases>
+
+    <script>
+        <![CDATA[
+
+require "gmcphelper"
+require "tprint"
+json = require "json"
+
+dofile (GetInfo(60) .. "aardwolf_colors.lua")
+
+local config = {}
+local triggerState = {area={}, session={}}
+local storedLastRoom = {["zone"] = "", ["num"] = ""}
+local next = next
+
+function OnPluginInstall()
+    AardNote("Area Triggers Enabled")
+    local state = GetVariable("config")
+
+    if state then
+        config = json.decode(state)
+    end
+end -- function
+
+function OnPluginSaveState ()
+    SetVariable("config", json.encode(config))
+    AardNote("Area Triggers Saved")
+end -- function
+
+
+function OnPluginBroadcast (msg, id, name, text)
+    if (id == "3e7dedbe37e44942dd46d264") then -- gmcphandler
+        if (text == "room.info") then
+            local room = gmcp("room.info")
+            local lastRoom = storedLastRoom
+
+            storedLastRoom = room
+            
+            if room.zone ~= lastRoom.zone then
+                if checkIfShouldTrigger(config[lastRoom.zone], "exit", lastRoom.zone) then                        
+                    Execute(config[lastRoom.zone].exit)
+                end
+
+                if checkIfShouldTrigger(config[room.zone], "enter", room.zone) then                
+                    Execute(config[room.zone].enter)
+                end                
+            end
+
+            if room.num ~= lastRoom.num then
+                if config[lastRoom.zone] and config[lastRoom.zone].rooms then
+                    local lrTrig = config[lastRoom.zone].rooms[lastRoom.num]
+
+                    if checkIfShouldTrigger(lrTrig, "exit", lastRoom.num) then
+                        Execute(lrTrig.exit)
+                    end
+                end
+
+                if config[room.zone] and config[room.zone].rooms then
+                    local rTrig = config[room.zone].rooms[room.num]
+
+                    if rTrig and not rTrig.roomName then
+                        rTrig.roomName = room.name
+                    end
+
+                    if checkIfShouldTrigger(rTrig, "enter", room.num) then
+                        Execute(rTrig.enter)
+                    end
+                end
+            end
+
+            if room.zone ~= lastRoom.zone then
+                triggerState.area = {}
+            end
+       end --if gmcphandler
+    end
+end
+
+function checkIfShouldTrigger (trigger, command, id)
+    if not trigger or not trigger[command] then
+        return false
+    end
+
+    if trigger.triggerType == "session" then
+        if not triggerState.session[id] then
+            triggerState.session[id] = {}
+        end
+
+        if triggerState.session[id][command] then
+            return false
+        else
+            triggerState.session[id][command] = true            
+        end
+    elseif trigger.triggerType == "area" then
+        if not triggerState.area[id] then
+            triggerState.area[id] = {}
+        end
+
+        if triggerState.area[id][command] then
+            return false
+        else
+            triggerState.area[id][command] = true            
+        end
+    end
+
+    return true
+end
+
+function updateConfig(name, line, wildcards)
+    if wildcards.command == "view" then
+        if wildcards.area and wildcards.area ~= "" then
+            if config[wildcards.area] then
+                AardNote("Displaying configuration for @G" .. wildcards.area .. ":")
+                printArea(wildcards.area, config[wildcards.area])
+            else
+                AardNote("Nothing configured for @G" .. wildcards.area)
+            end
+        else
+            if next(config) then
+                AardNote("Displaying all configured areas:")
+
+                for k, v in pairsByKeys(config) do
+                    printArea(k, v)
+                end
+            else
+                AardNote("No area triggers configured.")
+            end
+        end
+
+
+    else
+        if wildcards.area == "" then
+            AardNote("@RPlease specify an area.")
+
+            return
+        end
+
+        if wildcards.command == "clear" then
+            if wildcards.roomid == "" then
+                AardNote("Clearing configuration for @G" .. wildcards.area)    
+                printArea(wildcards.area, config[wildcards.area])
+                config[wildcards.area] = nil
+    
+                return
+            end
+
+            if config[wildcards.area].rooms[wildcards.roomid] then
+                AardNote("Clearing configuration for @G" .. wildcards.area .. "@b(@G"..wildcards.roomid.."@b)")    
+                printArea(wildcards.area, config[wildcards.area])
+                config[wildcards.area].rooms[wildcards.roomid] = nil
+            end
+
+            return
+        end
+
+
+        if not config[wildcards.area] then
+            config[wildcards.area] = {}
+        end
+
+        local areaTrigger = config[wildcards.area]
+
+        if wildcards.roomid == "" then
+            if wildcards.atType == "session" then
+                areaTrigger.triggerType = "session"
+            else
+                areaTrigger.triggerType = "default"
+            end
+
+            if wildcards.value then
+                AardNote("Setting @W"..wildcards.command.." @btrigger for @G"..wildcards.area.." @bto: @Y"..wildcards.value)
+                areaTrigger[wildcards.command] = wildcards.value
+            end
+
+            return
+        end
+
+        if areaTrigger.rooms then
+            areaTrigger.rooms = {}
+        end
+
+        if not areaTrigger.rooms[wildcards.roomid] then
+            areaTrigger.rooms[wildcards.roomid] = {}
+        end
+
+        local rtrig = areaTrigger.rooms[wildcards.roomid]
+
+        if wildcards.rtType == "" then
+            rtrig.triggerType = "default"
+        else
+            rtrig.triggerType = wildcards.rtType
+        end
+
+        if wildcards.value then
+            AardNote("Setting @W"..wildcards.command.." @btrigger for room id @G"..wildcards.roomid.." @bin @G"..wildcards.area.." to: @Y"..wildcards.value)
+            rtrig[wildcards.command] = wildcards.value
+        end
+    end
+end
+
+function printArea(areaid, area)
+    if not area then
+        return
+    end
+
+    AardNote(string.format("\r\n@w+ @G%-15s @w---------------------------------------", areaid))
+    AardNote("@W  Type : @Y"..(area.triggerType or "default"))
+    if area.enter then AardNote("@W  Enter: @Y"..area.enter) end
+    if area.exit  then AardNote("@W  Exit : @Y"..area.exit) end
+
+    if area.rooms and next(area.rooms) then
+        AardNote("@W  Rooms:")
+        table.foreach(area.rooms, 
+            function(k, v)
+                AardNote("@W    "..(v.roomName or "").."@w(@G"..k.."@w):")
+                AardNote("@W      Type : @Y"..v.triggerType)
+                if v.enter then AardNote("@W      Enter: @Y"..v.enter) end
+                if v.exit  then AardNote("@W      Exit : @Y"..v.exit) end
+            end
+        )
+    end
+end
+
+function importConfig()
+    local import = utils.editbox("Configuration Json", "Import Area Trigger Config", "", "Courier", 10, 
+        {
+            prompt_height = 15
+        })
+
+    if import and import ~= "" then
+        if not pcall(function()
+            local newConfig = json.decode(import)
+            AardNote("Old configuration:")
+            exportConfig()
+            config = newConfig
+        end) then
+            AardNote("@RUnable to parse configuration.")
+        end
+    end
+end
+
+function exportConfig()
+    AardNote("\r\n@W"..json.encode(config).."\r\n\r\n")
+end
+
+function printHelp()
+    Note()
+    AardNote("@C-------------------------------------- @cArea Trigger Help @C--------------------------------------")
+    Note()
+    AardNote(string.format("@YSyntax: @w%s \r\n\r\n@b%s\r\n\r\n", "atrig import", "Opens a dialog where a json serialized configuration can be entered to replace the existing one."))
+    AardNote(string.format("@YSyntax: @w%s \r\n\r\n@b%s\r\n\r\n", "atrig export", "Outputs the json serailized configuration."))
+    AardNote(string.format("@YSyntax: @w%s \r\n\r\n@b%s\r\n\r\n", "atrig reload", "Reloads the plugin."))
+    AardNote(string.format("@YSyntax: @w%s \r\n\r\n@b%s\r\n\r\n", "atrig view [@G<area id>@w]", "Displays the triggers configured [for the given area]."))
+    AardNote(string.format("@YSyntax: @w%s \r\n\r\n@b%s\r\n\r\n", "atrig clear @G<area id> @w[@G<room num>@w]", "Clears the triggers configured for the area [or specific room]."))
+    AardNote(string.format("@YSyntax: @w%s \r\n\r\n@b%s\r\n\r\n", "atrig enter|exit @G<area id>@w [@Gsession@w] @G<commands>", "Configures the enter|exit trigger for the area, optionally specifying whether it is only triggered once per session."))
+    AardNote(string.format("@YSyntax: @w%s \r\n\r\n@b%s\r\n\r\n", "atrig enter|exit @G<area id>@w @G<room num>@w [@Gsession|area@w] @G<commands>", "Configures the enter|exit trigger for room in the area, optionally specifying whether it is only triggered once per session, or once per entering the area."))
+    Note()
+    AardNote("@C-----------------------------------------------------------------------------------------------")
+    Note()
+end
+
+function reloadPlugin()
+    Execute(GetAlphaOption("script_prefix") .. "DoAfterSpecial(1, \"ReloadPlugin('" .. GetPluginID() .. "')\", sendto.script)")
+end
+
+function AardNote(msg)    
+    AnsiNote(ColoursToANSI(msg))
+end
+
+function pairsByKeys (t, f)
+    local a = {}
+    for n in pairs(t) do table.insert(a, n) end
+    table.sort(a, f)
+    local i = 0      -- iterator variable
+    local iter = function ()   -- iterator function
+        i = i + 1
+        if a[i] == nil then return nil
+        else return a[i], t[a[i]]
+        end
+    end
+    return iter
+end
+        ]]>
+    </script>
+</muclient>
