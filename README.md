@@ -1,5 +1,5 @@
 
-# Aardwolfmud-Area-Triggers
+# Aardwolfmud Area Triggers
 
 This plugin allows one to define triggers that fire on entering/exiting an area/room.
 
