@@ -32,4 +32,4 @@ Configures the enter|exit trigger for the area, optionally specifying whether it
 
 **Syntax**: atrig enter|exit <*area id*> <*room num*> [session|area] <*commands*>
 
-Configures the enter|exit trigger for room in the area, optionally specifying whether it is only triggered once per session, or once per entering the area.
+Configures the enter|exit trigger for a room in the area, optionally specifying whether it is only triggered once per session, or once per entering the area.
