@@ -85,6 +85,10 @@ function OnPluginBroadcast (msg, id, name, text)
                     end
                 end
 
+                if room.zone ~= lastRoom.zone then
+                    triggerState.area = {}
+                end
+
                 if config[room.zone] and config[room.zone].rooms then
                     local rTrig = config[room.zone].rooms[room.num]
 
@@ -96,11 +100,7 @@ function OnPluginBroadcast (msg, id, name, text)
                         Execute(rTrig.enter)
                     end
                 end
-            end
-
-            if room.zone ~= lastRoom.zone then
-                triggerState.area = {}
-            end
+            end            
        end --if gmcphandler
     end
 end
@@ -136,6 +136,8 @@ function checkIfShouldTrigger (trigger, command, id)
 end
 
 function updateConfig(name, line, wildcards)
+    Note()
+
     if wildcards.command == "view" then
         if wildcards.area and wildcards.area ~= "" then
             if config[wildcards.area] then
@@ -169,12 +171,9 @@ function updateConfig(name, line, wildcards)
                 AardNote("Clearing configuration for @G" .. wildcards.area)    
                 printArea(wildcards.area, config[wildcards.area])
                 config[wildcards.area] = nil
-    
-                return
-            end
 
-            if config[wildcards.area].rooms[wildcards.roomid] then
-                AardNote("Clearing configuration for @G" .. wildcards.area .. "@b(@G"..wildcards.roomid.."@b)")    
+            elseif config[wildcards.area].rooms[wildcards.roomid] then
+                AardNote("Clearing configuration for @W"..(config[wildcards.area].rooms[wildcards.roomid].roomName or "").."@w(@G"..wildcards.roomid.."@w) @bin @G"..wildcards.area)    
                 printArea(wildcards.area, config[wildcards.area])
                 config[wildcards.area].rooms[wildcards.roomid] = nil
             end
@@ -204,7 +203,7 @@ function updateConfig(name, line, wildcards)
             return
         end
 
-        if areaTrigger.rooms then
+        if not areaTrigger.rooms then
             areaTrigger.rooms = {}
         end
 
@@ -221,7 +220,7 @@ function updateConfig(name, line, wildcards)
         end
 
         if wildcards.value then
-            AardNote("Setting @W"..wildcards.command.." @btrigger for room id @G"..wildcards.roomid.." @bin @G"..wildcards.area.." to: @Y"..wildcards.value)
+            AardNote("Setting @W"..wildcards.command.." @btrigger for room id @G"..wildcards.roomid.." @bin @G"..wildcards.area.." @bto: @Y"..wildcards.value)
             rtrig[wildcards.command] = wildcards.value
         end
     end
